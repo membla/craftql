@@ -15,6 +15,7 @@ class Settings extends Model
     public $maxQueryComplexity = false;
     public $cacheEnabled = false;
     public $cacheDuration = null;
+    public $logQueries = false;
 
     function rules()
     {
