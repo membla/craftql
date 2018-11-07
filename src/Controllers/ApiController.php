@@ -112,17 +112,66 @@ class ApiController extends Controller
         }
         Craft::trace('CraftQL: Parsing request complete');
 
-        Craft::trace('CraftQL: Bootstrapping');
-        $this->graphQl->bootstrap();
-        Craft::trace('CraftQL: Bootstrapping complete');
+        $cacheKey = [
+            'input' => $input,
+            'variables' => $variables
+        ];
 
-        Craft::trace('CraftQL: Fetching schema');
-        $schema = $this->graphQl->getSchema($token);
-        Craft::trace('CraftQL: Schema built');
+        $tags = array_merge(
+            ['CraftQL', 'CraftQLResponse'],
+            explode(' ', Craft::$app->request->headers->get('Surrogate-Key'))
+        );
 
-        Craft::trace('CraftQL: Executing query');
-        $result = $this->graphQl->execute($schema, $input, $variables);
-        Craft::trace('CraftQL: Execution complete');
+        if (is_array($variables)) {
+            $tags = array_merge($tags, array_map(function($key, $val) {
+                if (!is_scalar($val)) {
+                    return null;
+                }
+                return $key.':'.$val;
+            }, array_keys($variables), $variables));
+        }
+
+        $cacheDependency = new \yii\caching\TagDependency([
+            'tags' => array_filter($tags),
+        ]);
+
+        $result = false;
+
+        if (CraftQL::getInstance()->getSettings()->cacheEnabled) {
+            Craft::trace('CraftQL: Retrieving cached result');
+            $result = Craft::$app->getCache()->get($cacheKey);
+        }
+
+        if ($result === false) {
+            Craft::trace('CraftQL: Bootstrapping');
+            $this->graphQl->bootstrap();
+            Craft::trace('CraftQL: Bootstrapping complete');
+
+            Craft::trace('CraftQL: Fetching schema');
+            $schema = $this->graphQl->getSchema($token);
+            Craft::trace('CraftQL: Schema built');
+
+            Craft::trace('CraftQL: Executing query');
+            $result = $this->graphQl->execute($schema, $input, $variables);
+            Craft::trace('CraftQL: Execution complete');
+
+            if (CraftQL::getInstance()->getSettings()->logQueries) {
+                Craft::warning('CraftQL: Logging cache tags: ' . json_encode($tags));
+                Craft::warning('CraftQL: Logging query: ' . json_encode($cacheKey));
+            }
+
+            if (CraftQL::getInstance()->getSettings()->cacheEnabled) {
+                Craft::trace('CraftQL: Caching result');
+                Craft::$app->getCache()->set(
+                    $cacheKey,
+                    $result,
+                    CraftQL::getInstance()->getSettings()->cacheDuration,
+                    $cacheDependency
+                );
+            }
+        } elseif (CraftQL::getInstance()->getSettings()->cacheEnabled) {
+            Craft::trace('CraftQL: Cached result retrieved');
+        }
 
         $customHeaders = CraftQL::getInstance()->getSettings()->headers ?: [];
         foreach ($customHeaders as $key => $value) {

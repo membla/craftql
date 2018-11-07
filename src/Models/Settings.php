@@ -15,6 +15,9 @@ class Settings extends Model
     public $headers = [];
     public $maxQueryDepth = false;
     public $maxQueryComplexity = false;
+    public $cacheEnabled = false;
+    public $cacheDuration = null;
+    public $logQueries = false;
 
     function rules()
     {
